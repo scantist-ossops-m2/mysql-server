@@ -5942,7 +5942,7 @@ int read_line(char *buf, int size)
 	  state= R_Q;
 	}
       }
-      have_slash= (c == '\\');
+      have_slash= (c == '\\' && last_quote != '`');
       break;
 
     case R_COMMENT:
@@ -6012,7 +6012,7 @@ int read_line(char *buf, int size)
     case R_Q:
       if (c == last_quote)
 	state= R_NORMAL;
-      else if (c == '\\')
+      else if (c == '\\' && last_quote != '`')
 	state= R_SLASH_IN_Q;
       break;
 
