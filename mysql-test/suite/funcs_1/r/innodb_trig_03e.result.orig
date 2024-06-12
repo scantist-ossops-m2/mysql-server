@@ -1,4 +1,3 @@
-SET @@session.sql_mode = 'NO_ENGINE_SUBSTITUTION';
 USE test;
 
 Testcase for db level:
@@ -8,7 +7,7 @@ drop database if exists no_priv_db;
 create database priv_db;
 create database no_priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
@@ -140,7 +139,7 @@ current_user
 test_yesprivs@localhost
 show grants for test_yesprivs@localhost;
 Grants for test_yesprivs@localhost
-GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD <secret>
+GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD '*C49735D016A099C0CF104EF9183F374A54CA2576'
 GRANT SELECT, UPDATE, TRIGGER ON `priv_db`.* TO 'test_yesprivs'@'localhost'
 drop trigger trg1_2;
 ERROR 42000: TRIGGER command denied to user 'test_yesprivs'@'localhost' for table 't1'
@@ -165,7 +164,7 @@ trig 1_2-yes
 switch to db without having trigger priv for it:
 ------------------------------------------------
 use no_priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 grant SELECT,UPDATE on no_priv_db.* to test_yesprivs@localhost;
 show grants for test_yesprivs@localhost;
 Grants for test_yesprivs@localhost
@@ -245,7 +244,7 @@ drop user test_noprivs@localhost;
 drop database if exists priv_db;
 create database priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
@@ -388,7 +387,7 @@ current_user
 test_yesprivs@localhost
 show grants for test_yesprivs@localhost;
 Grants for test_yesprivs@localhost
-GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD <secret>
+GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD '*C49735D016A099C0CF104EF9183F374A54CA2576'
 GRANT SELECT, INSERT, UPDATE, TRIGGER ON `priv_db`.`t1` TO 'test_yesprivs'@'localhost'
 drop trigger trg1_2;
 select current_user;
@@ -419,7 +418,7 @@ trig 1_2-yes
 
 switch to table without having trigger priv for it:
 ---------------------------------------------------
-create table t2 (f1 char(20)) engine= memory;
+create table t2 (f1 char(20)) engine= innodb;
 grant SELECT, INSERT, UPDATE on priv_db.t2 to test_yesprivs@localhost;
 show grants for test_yesprivs@localhost;
 Grants for test_yesprivs@localhost
@@ -493,9 +492,9 @@ drop database if exists no_priv_db;
 create database priv_db;
 create database no_priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 use no_priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
@@ -737,10 +736,10 @@ drop database if exists priv2_db;
 create database priv1_db;
 create database priv2_db;
 use priv1_db;
-create table t1 (f1 char(20)) engine= memory;
-create table t2 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
+create table t2 (f1 char(20)) engine= innodb;
 use priv2_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
@@ -967,7 +966,7 @@ drop user test_noprivs@localhost;
 drop database if exists priv_db;
 create database priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 create User test_useprivs@localhost;
@@ -1192,7 +1191,7 @@ drop user test_useprivs@localhost;
 drop database if exists priv_db;
 create database priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
@@ -1267,7 +1266,7 @@ current_user
 test_yesprivs@localhost
 show grants;
 Grants for test_yesprivs@localhost
-GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD <secret>
+GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD '*C49735D016A099C0CF104EF9183F374A54CA2576'
 GRANT TRIGGER ON `priv_db`.* TO 'test_yesprivs'@'localhost' WITH GRANT OPTION
 GRANT SELECT, INSERT, UPDATE, TRIGGER ON `priv_db`.`t1` TO 'test_yesprivs'@'localhost'
 create definer=not_ex_user@localhost trigger trg1_3
@@ -1283,14 +1282,70 @@ root@localhost
 drop database if exists priv_db;
 drop user test_yesprivs@localhost;
 
+#########      Testcase for transactions:   ########
+----------------------------------------------------
+drop database if exists priv_db;
+create database priv_db;
+use priv_db;
+create table t1 (f1 char(20)) engine= innodb;
+create User test_yesprivs@localhost;
+set password for test_yesprivs@localhost = password('PWD');
+revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
+select current_user;
+current_user
+root@localhost
+grant  select, insert, update ,trigger
+on priv_db.t1 to test_yesprivs@localhost;
+show grants for test_yesprivs@localhost;
+Grants for test_yesprivs@localhost
+GRANT USAGE ON *.* TO 'test_yesprivs'@'localhost' IDENTIFIED BY PASSWORD '*C49735D016A099C0CF104EF9183F374A54CA2576'
+GRANT SELECT, INSERT, UPDATE, TRIGGER ON `priv_db`.`t1` TO 'test_yesprivs'@'localhost'
+select current_user;
+current_user
+test_yesprivs@localhost
+use priv_db;
+set autocommit=0;
+create definer=current_user trigger trg1_1
+before INSERT on t1 for each row
+set new.f1 = 'trig 1_1-yes';
+rollback work;
+insert into t1 (f1) values ('insert-no');
+select f1 from t1 order by f1;
+f1
+trig 1_1-yes
+create definer=test_yesprivs@localhost trigger trg1_2
+before UPDATE on t1 for each row
+set new.f1 = 'trig 1_2-yes';
+commit work;
+update t1 set f1 = 'update-yes' where f1 like '%trig%';
+select f1 from t1 order by f1;
+f1
+trig 1_2-yes
+commit work;
+drop trigger trg1_1;
+rollback work;
+drop trigger trg1_1;
+ERROR HY000: Trigger does not exist
+drop trigger trg1_2;
+commit work;
+set autocommit=1;
+select current_user;
+current_user
+root@localhost
+select current_user;
+current_user
+root@localhost
+drop database if exists priv_db;
+drop user test_yesprivs@localhost;
+
 ####### Testcase for column privileges of triggers: #######
 -----------------------------------------------------------
 drop database if exists priv_db;
 drop database if exists no_priv_db;
 create database priv_db;
 use priv_db;
-create table t1 (f1 char(20)) engine= memory;
-create table t2 (f1 char(20)) engine= memory;
+create table t1 (f1 char(20)) engine= innodb;
+create table t2 (f1 char(20)) engine= innodb;
 create User test_yesprivs@localhost;
 set password for test_yesprivs@localhost = password('PWD');
 revoke ALL PRIVILEGES, GRANT OPTION FROM test_yesprivs@localhost;
