@@ -1941,8 +1941,12 @@ static Sys_var_charptr Sys_secure_file_priv(
        "secure_file_priv",
        "Limit LOAD DATA, SELECT ... OUTFILE, and LOAD_FILE() to files "
        "within specified directory",
-       PREALLOCATED READ_ONLY GLOBAL_VAR(opt_secure_file_priv),
-       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(0));
+       READ_ONLY GLOBAL_VAR(opt_secure_file_priv),
+#ifndef EMBEDDED_LIBRARY
+       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(DEFAULT_SECURE_FILE_PRIV_DIR));
+#else
+       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(DEFAULT_SECURE_FILE_PRIV_EMBEDDED_DIR));
+#endif
 
 static bool fix_server_id(sys_var *self, THD *thd, enum_var_type type)
 {
@@ -2069,6 +2073,10 @@ static bool fix_sql_mode(sys_var *self, THD *thd, enum_var_type type)
       thd->server_status|= SERVER_STATUS_NO_BACKSLASH_ESCAPES;
     else
       thd->server_status&= ~SERVER_STATUS_NO_BACKSLASH_ESCAPES;
+    if (thd->variables.sql_mode & MODE_ANSI_QUOTES)
+      thd->server_status|= SERVER_STATUS_ANSI_QUOTES;
+    else
+      thd->server_status&= ~SERVER_STATUS_ANSI_QUOTES;
   }
   return false;
 }

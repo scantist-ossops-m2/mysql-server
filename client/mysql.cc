@@ -2106,8 +2106,10 @@ static bool add_line(String &buffer,char *line,char *in_string,
       continue;
     }
 #endif
-    if (!*ml_comment && inchar == '\\' &&
-        !(*in_string && 
+    if (!*ml_comment && inchar == '\\' && *in_string != '`' &&
+        !(*in_string == '"' &&
+          (mysql.server_status & SERVER_STATUS_ANSI_QUOTES)) &&
+        !(*in_string &&
           (mysql.server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES)))
     {
       // Found possbile one character command like \c
@@ -2117,7 +2119,10 @@ static bool add_line(String &buffer,char *line,char *in_string,
       if (*in_string || inchar == 'N')	// \N is short for NULL
       {					// Don't allow commands in string
 	*out++='\\';
-	*out++= (char) inchar;
+        if ((inchar == '`') && (*in_string == inchar))
+          pos--;
+        else
+	  *out++= (char) inchar;
 	continue;
       }
       if ((com=find_command(NullS,(char) inchar)))
