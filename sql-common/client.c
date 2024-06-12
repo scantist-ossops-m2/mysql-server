@@ -1476,7 +1476,9 @@ unpack_fields(MYSQL *mysql, MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
     {
       uchar *pos;
       /* fields count may be wrong */
-      DBUG_ASSERT((uint) (field - result) < fields);
+      if (field - result >= fields)
+        goto err;
+
       cli_fetch_lengths(&lengths[0], row->data, default_value ? 8 : 7);
       field->catalog=   strmake_root(alloc,(char*) row->data[0], lengths[0]);
       field->db=        strmake_root(alloc,(char*) row->data[1], lengths[1]);
@@ -1494,12 +1496,7 @@ unpack_fields(MYSQL *mysql, MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
 
       /* Unpack fixed length parts */
       if (lengths[6] != 12)
-      {
-        /* malformed packet. signal an error. */
-        free_rows(data);			/* Free old data */
-        set_mysql_error(mysql, CR_MALFORMED_PACKET, unknown_sqlstate);
-        DBUG_RETURN(0);
-      }
+        goto err;
 
       pos= (uchar*) row->data[6];
       field->charsetnr= uint2korr(pos);
@@ -1526,6 +1523,8 @@ unpack_fields(MYSQL *mysql, MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
     /* old protocol, for backward compatibility */
     for (row=data->data; row ; row = row->next,field++)
     {
+      if (field - result >= fields)
+        goto err;
       cli_fetch_lengths(&lengths[0], row->data, default_value ? 6 : 5);
       field->org_table= field->table=  strdup_root(alloc,(char*) row->data[0]);
       field->name=   strdup_root(alloc,(char*) row->data[1]);
@@ -1562,8 +1561,17 @@ unpack_fields(MYSQL *mysql, MYSQL_DATA *data,MEM_ROOT *alloc,uint fields,
     }
   }
 #endif /* DELETE_SUPPORT_OF_4_0_PROTOCOL */
+  if (field - result < fields)
+    goto err;
   free_rows(data);				/* Free old data */
   DBUG_RETURN(result);
+
+err:
+  /* malformed packet. signal an error. */
+  free_rows(data);
+  free_root(alloc, MYF(0));
+  set_mysql_error(mysql, CR_MALFORMED_PACKET, unknown_sqlstate);
+  DBUG_RETURN(0);
 }
 
 /* Read all rows (fields or data) from server */
@@ -1803,6 +1811,7 @@ mysql_ssl_set(MYSQL *mysql __attribute__((unused)) ,
   mysql->options.ssl_ca=     strdup_if_not_null(ca);
   mysql->options.ssl_capath= strdup_if_not_null(capath);
   mysql->options.ssl_cipher= strdup_if_not_null(cipher);
+  mysql->options.use_ssl= TRUE;
 #endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
   DBUG_RETURN(0);
 }
@@ -2545,14 +2554,11 @@ static int send_client_reply_packet(MCPVIO_EXT *mpvio,
   if (mysql->client_flag & CLIENT_MULTI_STATEMENTS)
     mysql->client_flag|= CLIENT_MULTI_RESULTS;
 
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
-  if (mysql->options.ssl_key || mysql->options.ssl_cert ||
-      mysql->options.ssl_ca || mysql->options.ssl_capath ||
-      mysql->options.ssl_cipher)
-    mysql->options.use_ssl= 1;
+#ifdef HAVE_OPENSSL
   if (mysql->options.use_ssl)
     mysql->client_flag|= CLIENT_SSL;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY*/
+#endif /* HAVE_OPENSSL */
+
   if (mpvio->db)
     mysql->client_flag|= CLIENT_CONNECT_WITH_DB;
 
@@ -2581,6 +2587,23 @@ static int send_client_reply_packet(MCPVIO_EXT *mpvio,
     end= buff+5;
   }
 #ifdef HAVE_OPENSSL
+
+  /*
+     If client uses ssl and client also has to verify the server
+     certificate, a ssl connection is required.
+     If the server does not support ssl, we abort the connection.
+  */
+  if (mysql->options.use_ssl &&
+      (mysql->client_flag & CLIENT_SSL_VERIFY_SERVER_CERT) &&
+      !(mysql->server_capabilities & CLIENT_SSL))
+  {
+    set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR, unknown_sqlstate,
+                             ER(CR_SSL_CONNECTION_ERROR),
+                             "SSL is required, but the server does not "
+                             "support it");
+    goto error;
+  }
+
   if (mysql->client_flag & CLIENT_SSL)
   {
     /* Do the SSL layering. */

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1316,8 +1316,9 @@ sig_handler handle_sigint(int sig)
   }
 
   kill_mysql= mysql_init(kill_mysql);
-  if (!mysql_real_connect(kill_mysql,current_host, current_user, opt_password,
-                          "", opt_mysql_port, opt_mysql_unix_port,0))
+  if (!mysql_connect_ssl_check(kill_mysql, current_host, current_user, opt_password,
+                               "", opt_mysql_port, opt_mysql_unix_port, 0,
+                               opt_ssl_required))
   {
     tee_fprintf(stdout, "Ctrl-C -- sorry, cannot connect to server to kill query, giving up ...\n");
     goto err;
@@ -2105,8 +2106,10 @@ static bool add_line(String &buffer,char *line,char *in_string,
       continue;
     }
 #endif
-    if (!*ml_comment && inchar == '\\' &&
-        !(*in_string && 
+    if (!*ml_comment && inchar == '\\' && *in_string != '`' &&
+        !(*in_string == '"' &&
+          (mysql.server_status & SERVER_STATUS_ANSI_QUOTES)) &&
+        !(*in_string &&
           (mysql.server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES)))
     {
       // Found possbile one character command like \c
@@ -2116,7 +2119,10 @@ static bool add_line(String &buffer,char *line,char *in_string,
       if (*in_string || inchar == 'N')	// \N is short for NULL
       {					// Don't allow commands in string
 	*out++='\\';
-	*out++= (char) inchar;
+        if ((inchar == '`') && (*in_string == inchar))
+          pos--;
+        else
+	  *out++= (char) inchar;
 	continue;
       }
       if ((com=find_command(NullS,(char) inchar)))
@@ -4457,9 +4463,10 @@ sql_real_connect(char *host,char *database,char *user,char *password,
     mysql_options(&mysql, MYSQL_ENABLE_CLEARTEXT_PLUGIN, 
                   (char*) &opt_enable_cleartext_plugin);
 
-  if (!mysql_real_connect(&mysql, host, user, password,
-                          database, opt_mysql_port, opt_mysql_unix_port,
-                          connect_flag | CLIENT_MULTI_STATEMENTS))
+  if (!mysql_connect_ssl_check(&mysql, host, user, password,
+                               database, opt_mysql_port, opt_mysql_unix_port,
+                               connect_flag | CLIENT_MULTI_STATEMENTS,
+                               opt_ssl_required))
   {
     if (!silent ||
 	(mysql_errno(&mysql) != CR_CONN_HOST_ERROR &&

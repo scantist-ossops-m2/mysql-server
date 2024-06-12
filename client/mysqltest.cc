@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -3012,10 +3012,6 @@ void do_exec(struct st_command *command)
 #endif
 #endif
 
-  /* exec command is interpreted externally and will not take newlines */
-  while(replace(&ds_cmd, "\n", 1, " ", 1) == 0)
-    ;
-  
   DBUG_PRINT("info", ("Executing '%s' as '%s'",
                       command->first_argument, ds_cmd.str));
 
@@ -5281,8 +5277,9 @@ void safe_connect(MYSQL* mysql, const char *name, const char *host,
   verbose_msg("Connecting to server %s:%d (socket %s) as '%s'"
               ", connection '%s', attempt %d ...", 
               host, port, sock, user, name, failed_attempts);
-  while(!mysql_real_connect(mysql, host,user, pass, db, port, sock,
-                            CLIENT_MULTI_STATEMENTS | CLIENT_REMEMBER_OPTIONS))
+  while(!mysql_connect_ssl_check(mysql, host,user, pass, db, port, sock,
+                                 CLIENT_MULTI_STATEMENTS | CLIENT_REMEMBER_OPTIONS,
+                                 opt_ssl_required))
   {
     /*
       Connect failed
@@ -5382,8 +5379,9 @@ int connect_n_handle_errors(struct st_command *command,
     dynstr_append_mem(ds, ";\n", 2);
   }
   
-  while (!mysql_real_connect(con, host, user, pass, db, port, sock ? sock: 0,
-                          CLIENT_MULTI_STATEMENTS))
+  while (!mysql_connect_ssl_check(con, host, user, pass, db, port,
+                                  sock ? sock: 0, CLIENT_MULTI_STATEMENTS,
+                                  opt_ssl_required))
   {
     /*
       If we have used up all our connections check whether this
@@ -6031,6 +6029,16 @@ my_bool end_of_query(int c)
 }
 
 
+static inline bool is_escape_char(char c, char in_string)
+{
+  if (c != '\\' || in_string == '`') return false;
+  if (!cur_con) return true;
+  uint server_status= cur_con->mysql->server_status;
+  if (server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES) return false;
+  return !(server_status & SERVER_STATUS_ANSI_QUOTES && in_string == '"');
+}
+
+
 /*
   Read one "line" from the file
 
@@ -6139,7 +6147,7 @@ int read_line(char *buf, int size)
 	  state= R_Q;
 	}
       }
-      have_slash= (c == '\\');
+      have_slash= is_escape_char(c, last_quote);
       break;
 
     case R_COMMENT:
@@ -6209,7 +6217,7 @@ int read_line(char *buf, int size)
     case R_Q:
       if (c == last_quote)
 	state= R_NORMAL;
-      else if (c == '\\')
+      else if (is_escape_char(c, last_quote))
 	state= R_SLASH_IN_Q;
       break;
 
