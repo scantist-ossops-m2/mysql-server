@@ -13,9 +13,3 @@ SELECT @@open_files_limit = 1000000;
 0
 
 End of tests
-1
-1
-2
-2
-X
-3
