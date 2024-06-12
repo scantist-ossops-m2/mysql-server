@@ -271,6 +271,12 @@ source database
 echo message echo message
 
 mysqltest: At line 1: Missing argument in exec
+1
+1
+2
+2
+X
+3
 MySQL
 "MySQL"
 MySQL: The
@@ -957,9 +963,4 @@ con1
 con2
 con2
 -closed_connection-
-set sql_mode=no_backslash_escapes;
-select "foo\""bar";
-foo\"bar
-foo\"bar
-set sql_mode=default;
 End of tests
