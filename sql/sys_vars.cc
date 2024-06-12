@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1941,8 +1941,12 @@ static Sys_var_charptr Sys_secure_file_priv(
        "secure_file_priv",
        "Limit LOAD DATA, SELECT ... OUTFILE, and LOAD_FILE() to files "
        "within specified directory",
-       PREALLOCATED READ_ONLY GLOBAL_VAR(opt_secure_file_priv),
-       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(0));
+       READ_ONLY GLOBAL_VAR(opt_secure_file_priv),
+#ifndef EMBEDDED_LIBRARY
+       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(DEFAULT_SECURE_FILE_PRIV_DIR));
+#else
+       CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(DEFAULT_SECURE_FILE_PRIV_EMBEDDED_DIR));
+#endif
 
 static bool fix_server_id(sys_var *self, THD *thd, enum_var_type type)
 {
@@ -2069,6 +2073,10 @@ static bool fix_sql_mode(sys_var *self, THD *thd, enum_var_type type)
       thd->server_status|= SERVER_STATUS_NO_BACKSLASH_ESCAPES;
     else
       thd->server_status&= ~SERVER_STATUS_NO_BACKSLASH_ESCAPES;
+    if (thd->variables.sql_mode & MODE_ANSI_QUOTES)
+      thd->server_status|= SERVER_STATUS_ANSI_QUOTES;
+    else
+      thd->server_status&= ~SERVER_STATUS_ANSI_QUOTES;
   }
   return false;
 }
@@ -2810,6 +2818,14 @@ static bool check_log_path(sys_var *self, THD *thd, set_var *var)
   if (!var->save_result.string_value.str)
     return true;
 
+  if (!is_valid_log_name(var->save_result.string_value.str,
+                         var->save_result.string_value.length))
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0),
+             self->name.str, var->save_result.string_value.str);
+    return true;
+  }
+
   if (var->save_result.string_value.length > FN_REFLEN)
   { // path is too long
     my_error(ER_PATH_LENGTH, MYF(0), self->name.str);
@@ -2856,7 +2872,7 @@ static bool check_log_path(sys_var *self, THD *thd, set_var *var)
   return false;
 }
 static bool fix_log(char** logname, const char* default_logname,
-                    const char*ext, bool enabled, void (*reopen)(char*))
+                    const char*ext, bool enabled, bool (*reopen)(char*))
 {
   if (!*logname) // SET ... = DEFAULT
   {
@@ -2868,16 +2884,17 @@ static bool fix_log(char** logname, const char* default_logname,
   }
   logger.lock_exclusive();
   mysql_mutex_unlock(&LOCK_global_system_variables);
+  bool error= false;
   if (enabled)
-    reopen(*logname);
+    error= reopen(*logname);
   logger.unlock();
   mysql_mutex_lock(&LOCK_global_system_variables);
-  return false;
+  return error;
 }
-static void reopen_general_log(char* name)
+static bool reopen_general_log(char* name)
 {
   logger.get_log_file_handler()->close(0);
-  logger.get_log_file_handler()->open_query_log(name);
+  return logger.get_log_file_handler()->open_query_log(name);
 }
 static bool fix_general_log_file(sys_var *self, THD *thd, enum_var_type type)
 {
@@ -2890,10 +2907,10 @@ static Sys_var_charptr Sys_general_log_path(
        IN_FS_CHARSET, DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG,
        ON_CHECK(check_log_path), ON_UPDATE(fix_general_log_file));
 
-static void reopen_slow_log(char* name)
+static bool reopen_slow_log(char* name)
 {
   logger.get_slow_log_file_handler()->close(0);
-  logger.get_slow_log_file_handler()->open_slow_log(name);
+  return logger.get_slow_log_file_handler()->open_slow_log(name);
 }
 static bool fix_slow_log_file(sys_var *self, THD *thd, enum_var_type type)
 {
